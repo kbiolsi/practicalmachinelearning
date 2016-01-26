@@ -68,6 +68,7 @@ legend(x=-100,y=.007,c("accel_forearm_x","accel_forearm_y","accel_forearm_z"),
        col=c("green","red","blue"),lty=c(1),cex=.8)
 par(mfrow=c(1,1))
 ```
+<br />
 Because we will be using tree-based procedures (recursive partitioning and random forests) and we are primarily concerned with prediction rather than model interpretation, we will not be too concerned with standardizing variables (although we'll address this again briefly below), removing outliers, or removing variables that are highly correlated with one another.
 
 <h3>Training/Testing Sets</h3>
