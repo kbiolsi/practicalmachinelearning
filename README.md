@@ -1,1 +1,1 @@
-# practicalmachinelearning
+Files for Practical Machine Learning course project
