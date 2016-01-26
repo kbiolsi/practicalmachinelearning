@@ -1,0 +1,163 @@
+---
+title: "Practical Machine Learning Project"
+output: html_document
+---
+<h3>Background</h3>
+```{r echo=FALSE,eval=FALSE}
+    opts_chunk$set(warning=FALSE, message=FALSE)
+```
+We analyzed wearable sensor data collected from participants performing dumbbell lifts. More specifically, six different participants performed unilateral dumbbell biceps curls for a set of ten repetitions in five ways: exactly as specified (A), throwing elbows to the front (B), lifting the dumbbell halfway (C), lowering the dumbbell halfway (D) and throwing hips to the front (E). During these lifts, data points were collected through sensors on the forearms, upper arms, belt line, and dumbbell. 
+
+The purpose of the present analysis was to use the sensor data to predict in which of the five ways lifts were completed.
+
+More information on the data set may be found at http://groupware.les.inf.puc-rio.br/har.
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE}
+library(caret)
+library(ggplot2)
+library(randomForest)
+library(Hmisc)
+library(knitr)
+setwd("c:/Users/Kevin/My Documents/Coursera Courses/Practical Machine Learning")
+```
+<h3>Data Preparation</h3>
+We first read in the data file and look at missing value patterns.
+```{r}
+projectData<-read.csv("pml-training.csv",header=TRUE,na.strings=c("","NA"))
+dim(projectData)
+numNA<-apply(is.na(projectData),2,sum) # Sum up NAs for each variable
+table(numNA)
+```
+There are 19,622 cases and 160 variables in the data file, but 100 of these variables have 19,216 missing values. We will remove those 100 variables from the analysis.
+
+```{r}
+data<-subset(projectData,select=(numNA<19216))
+dim(data)
+colnames(data)
+```
+We will keep only the predictor variables relating to sensor motion, removing the first seven ("X"-"num_window"). It is possible that time of day or various durations may have predictive value, but we won't consider them for the current analysis. 
+```{r}
+data<-data[,8:60] # Remove first seven variables
+dim(data)
+```
+While not including the full set of analysis variables, the following plots give a sense of the different types of distributions present in the data set. For example, we see multimodal distrbutions and, for the gyros_dumbbell_x variable, an extreme outlier. 
+```{r echo=FALSE}
+par(mfrow=c(2,2))
+par(mar=c(2,4,2,2))
+plot(density(data$pitch_belt),col="green",xlab="",main="")
+lines(density(data$roll_belt),col="red")
+lines (density(data$yaw_belt),col="blue")
+legend(x=-60,y=.080,c("pitch_belt","roll_belt","yaw_belt"),
+       col=c("green","red","blue"),lty=c(1,1,1),cex=.8)
+
+stripchart(data$gyros_dumbbell_x,col="blue",method="stack",pch=20,ylim=c(0,2000))
+text(x=-160,y=2000,"gyros_dumbbell_x")
+
+plot (density(data$magnet_arm_x),col="green",
+      xlim=c(-600,800),ylim=c(0,.003),xlab="",main="")
+lines(density(data$magnet_arm_y),col="red")
+lines (density(data$magnet_arm_z),col="blue")
+legend(x=-600,y=.003,c("magnet_arm_x","magnet_arm_y","magnet_arm_z"),
+       col=c("green","red","blue"),lty=c(1),cex=.8)
+
+plot (density(data$accel_forearm_x),col="green",
+      xlab="",main="",ylim=c(0,.007))
+lines(density(data$accel_forearm_y),col="red")
+lines (density(data$accel_forearm_z),col="blue")
+legend(x=-100,y=.007,c("accel_forearm_x","accel_forearm_y","accel_forearm_z"),
+       col=c("green","red","blue"),lty=c(1),cex=.8)
+par(mfrow=c(1,1))
+```
+Because we will be using tree-based procedures (recursive partitioning and random forests) and we are primarily concerned with prediction rather than model interpretation, we will not be too concerned with standardizing variables (although we'll address this again briefly below), removing outliers, or removing variables that are highly correlated with one another.
+
+<h3>Training/Testing Sets</h3>
+We next split the data set into training and testing sets using a 60/40 ratio.
+```{r}
+set.seed(9102)
+InTrain<-createDataPartition(y=data$classe,p=0.6,list=FALSE)
+training<-data[InTrain,]
+testing<-data[-InTrain,]
+dim(training); dim(testing)
+```
+<h3>Recursive Paritioning</h3>
+We begin model building with a simple classification tree.<br />
+
+We will look at three different runs:<br />
+1. No pre-processing or cross validation.<br />
+2. Repeated cross validation (k-folds with k=5, repeats=10)<br />
+3. Repeated cross validation (k=5,repeats=10) and centered/scaled data
+
+```{r message=FALSE, warning=FALSE}
+# No preprocessing, no cross validation.
+set.seed(7573)
+rp1<-train(classe~.,data=training,method="rpart")
+
+# Repeated cross validation (k=5, repeats=10)
+set.seed(31933)
+trCtrl<-trainControl(method="repeatedcv",number=5,repeats=10)
+rp2<-train(classe~.,data=training,trControl=trCtrl,method="rpart")
+
+# Repeated cross validation (k=5, repeats=10) and centering/scaling
+set.seed(43834)
+trCtrl<-trainControl(method="repeatedcv",number=5,repeats=10)
+rp3<-train(classe~.,data=training,preProcess=c("center","scale"),trControl=trCtrl,method="rpart")
+
+print(rp1)
+print(rp2)
+print(rp3)
+```
+
+Across the three runs, model performance is fairly poor, with the maximum accuracy achieved being about 51%. In addition, centering and scaling has very little effect on model performance.
+
+<h3>Random Forests</h3>
+We next attempt to increase predictive accuracy using random forests.
+```{r}
+set.seed(9131)
+rf<-randomForest(classe~.,data=training,importance=TRUE)
+print(rf)
+# NOTE: The train() function in the caret package could also have been used, 
+#       but early attempts to do so resulted in prohibitively long run times.
+```
+<h3>Out-of-Sample Error</h3>
+<em>Using the OOB (out-of-bag) estimate of error rate, the expected out-of-sample error rate is <strong>0.74%.</strong></em>
+
+As noted by Breiman and Cutler at www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm, with random forests "there is no need for cross-validation or a separate test set to get an unbiased estimate of the test set error. It is estimated internally, during the run ..."
+We can show that the OOB estimate of the error rate generated in the random forest analysis is, in fact, larger than the error rate obtained on the training set.
+```{r}
+rf_pred<-predict(rf,newdata=training)
+table(rf_pred,training$classe)
+```
+As we can see from the above table (which shows predicted class crossed with actual class), the model (built on the training set) correctly classifies every observation in the training set, implying an error rate of 0%. The random forest analysis, however, provides an estimate of 0.74% (still impressively low, but greater than 0%).
+
+Now we examine how the model performs with the testing set.
+```{r}
+rf_test_pred<-predict(rf,newdata=testing)
+test_err<-1-(sum(rf_test_pred==testing$classe)/length(rf_test_pred))
+test_err
+```
+The accuracy value of 0.74% in the testing set is equivalent to the estimated out of sample error rate based on our random forests analysis of the training set.
+
+<h3>Variable Importance</h3>
+We can examine variable importance by looking at two different measures: (1) mean decrease in accuracy and (2) mean decrease in the Gini index. Shown below are the top five variables by each of these criteria.
+```{r}
+head(sort(importance(rf)[,6],decreasing=TRUE),n=5) # Mean decrease in accuracy
+head(sort(importance(rf)[,7],decreasing=TRUE),n=5) # Mean decrease in Gini index
+```
+Four variables (yaw_belt, roll_belt, magnet_dumbbell_z, and pitch_belt) appear in the top five for both criteria. 
+
+<h2>Prediction Quiz</h2>
+Finally we examine the predictions of the model for the Course Project Prediction Quiz.
+```{r}
+projectTest<-read.csv("pml-testing.csv",header=TRUE,na.strings=c("","NA"))
+rf_projTest_pred<-predict(rf,newdata=projectTest)
+rf_projTest_pred
+```
+In the test, all twenty predictions were correct. Once again, the random forest model appears to be very good at classifying into the five groups.
+
+
+
+
+
+
+
+
